@@ -19,13 +19,13 @@ const USAGE_PATH = path.join(__dir, "usage.json");
 const EMBEDDED = {
   routerKey: "sk-local", port: 4001, timeoutMs: 60000, cooldownSec: 60,
   providers: [
-    { id: "zai", label: "Z.AI GLM-4.5-Flash", base: "https://api.z.ai/api/paas/v4", model: "glm-4.5-flash", key: "", env: "ZAI_KEY", daily: 1000, monthly: 30000, rank: 1 },
-    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", daily: 5000, monthly: 150000, rank: 2 },
-    { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", daily: 50, monthly: 1500, rank: 3 },
-    { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", daily: 40000, monthly: 300000, rank: 4 },
-    { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", daily: 50, monthly: 600, rank: 5 },
-    { id: "cloudflare", label: "Cloudflare Llama 3.1 8B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", key: "", env: "CLOUDFLARE_KEY", daily: 1500, monthly: 45000, rank: 6 },
-    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", daily: 33, monthly: 1000, rank: 7 },
+    { id: "zai", label: "Z.AI GLM-4.5-Flash", base: "https://api.z.ai/api/paas/v4", model: "glm-4.5-flash", key: "", env: "ZAI_KEY", hourly: 40, daily: 1000, monthly: 30000, minIntervalMs: 3000, rank: 1 },
+    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", hourly: 600, daily: 5000, monthly: 150000, minIntervalMs: 2000, rank: 2 },
+    { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", hourly: 2, daily: 50, monthly: 1500, minIntervalMs: 2000, rank: 3 },
+    { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", hourly: 1500, daily: 40000, monthly: 300000, minIntervalMs: 500, rank: 4 },
+    { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", hourly: 4, daily: 50, monthly: 600, minIntervalMs: 2000, rank: 5 },
+    { id: "cloudflare", label: "Cloudflare Llama 3.1 8B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", key: "", env: "CLOUDFLARE_KEY", hourly: 200, daily: 1500, monthly: 45000, minIntervalMs: 1000, rank: 6 },
+    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", hourly: 2, daily: 33, monthly: 1000, minIntervalMs: 2000, rank: 7 },
   ],
 };
 
@@ -54,25 +54,32 @@ const ROUTER_KEY = config.routerKey || "sk-local";
 let memLedger = null;
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function monthStr() { return new Date().toISOString().slice(0, 7); }
+function hourStr() { return new Date().toISOString().slice(0, 13); }
+function blankCounts() { return {}; }
 function blankLedger() {
-  return { day: todayStr(), month: monthStr(), counts: {}, cooldownUntil: {} };
+  return { day: todayStr(), month: monthStr(), hour: hourStr(), counts: {}, cooldownUntil: {}, lastCallAt: {} };
+}
+function resetCounts(l, keepMonth) {
+  for (const [k, v] of Object.entries(l.counts || {})) {
+    l.counts[k] = { day: 0, month: keepMonth ? (v.month || 0) : 0, hour: 0, tokens: 0 };
+  }
 }
 function readLedger() {
   if (memLedger && process.env.VERCEL === "1") return memLedger;
   try {
     const l = JSON.parse(fs.readFileSync(USAGE_PATH, "utf8"));
-    if (l.day !== todayStr()) {
-      l.day = todayStr();
-      l.counts = Object.fromEntries(
-        Object.entries(l.counts || {}).map(([k, v]) => [k, { day: 0, month: v.month || 0, tokens: 0 }])
-      );
-      l.cooldownUntil = {};
-    }
     if (l.month !== monthStr()) {
-      l.month = monthStr();
-      l.counts = {};
+      l.month = monthStr(); l.day = todayStr(); l.hour = hourStr();
+      l.counts = {}; l.cooldownUntil = {}; l.lastCallAt = l.lastCallAt || {};
+    } else if (l.day !== todayStr()) {
+      l.day = todayStr(); l.hour = hourStr();
+      resetCounts(l, true);
       l.cooldownUntil = {};
+    } else if (l.hour !== hourStr()) {
+      l.hour = hourStr();
+      for (const v of Object.values(l.counts || {})) v.hour = 0;
     }
+    l.lastCallAt = l.lastCallAt || {};
     return l;
   } catch {
     return memLedger || blankLedger();
@@ -84,8 +91,9 @@ function writeLedger(l) {
 }
 function bump(id, tokens = 0) {
   const l = readLedger();
-  const c = l.counts[id] || { day: 0, month: 0, tokens: 0 };
-  c.day += 1; c.month += 1; c.tokens += tokens;
+  if (l.hour !== hourStr()) { l.hour = hourStr(); for (const v of Object.values(l.counts || {})) v.hour = 0; }
+  const c = l.counts[id] || { day: 0, month: 0, hour: 0, tokens: 0 };
+  c.day += 1; c.month += 1; c.hour += 1; c.tokens += tokens;
   l.counts[id] = c;
   writeLedger(l);
 }
@@ -96,7 +104,7 @@ function cooldown(id, ms = COOLDOWN) {
 }
 function countOf(id) {
   const l = readLedger();
-  return l.counts[id] || { day: 0, month: 0, tokens: 0 };
+  return l.counts[id] || { day: 0, month: 0, hour: 0, tokens: 0 };
 }
 function coolingUntil(id) {
   const l = readLedger();
@@ -107,15 +115,60 @@ function coolingUntil(id) {
 // ---------- routing: quality waterfall, smartest first ----------
 const ordered = [...config.providers].sort((a, b) => a.rank - b.rank);
 
+function budgetHit(p) {
+  const c = countOf(p.id);
+  if (p.hourly && (c.hour || 0) >= p.hourly) return "hour";
+  if (p.daily && c.day >= p.daily) return "day";
+  if (p.monthly && c.month >= p.monthly) return "month";
+  return null;
+}
+
 function eligible(list = ordered) {
   return list.filter((p) => {
     if (coolingUntil(p.id)) return false;
-    const c = countOf(p.id);
-    if (p.daily && c.day >= p.daily) return false;
-    if (p.monthly && c.month >= p.monthly) return false;
+    if (budgetHit(p)) return false;
     if (!p.key) return false;
     return true;
   });
+}
+
+// Pacing: min gap between calls per provider (wait, don't skip) so agent
+// bursts don't self-inflict 429s. Best-effort under concurrency.
+function paceWaitMs(p) {
+  const gap = p.minIntervalMs || 0;
+  if (!gap) return 0;
+  const l = readLedger();
+  const last = l.lastCallAt?.[p.id] || 0;
+  return Math.max(0, gap - (Date.now() - last));
+}
+function stampCall(p) {
+  const l = readLedger();
+  l.lastCallAt = l.lastCallAt || {};
+  l.lastCallAt[p.id] = Date.now();
+  writeLedger(l);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Seconds until at least one provider recovers (cooldown/hour/day).
+// -1 = nothing recovers without a monthly reset (dead).
+function nextRecoverySec(list = ordered) {
+  const now = Date.now();
+  const d = new Date();
+  const msToHour = 3600000 - (d.getUTCMinutes() * 60000 + d.getUTCSeconds() * 1000 + d.getUTCMilliseconds());
+  const msToMidnight = 86400000 - (d.getUTCHours() * 3600000 + d.getUTCMinutes() * 60000 + d.getUTCSeconds() * 1000 + d.getUTCMilliseconds());
+  let best = Infinity;
+  for (const p of list) {
+    if (!p.key) continue;
+    const cool = coolingUntil(p.id);
+    if (cool) { best = Math.min(best, cool - now); continue; }
+    const hit = budgetHit(p);
+    if (!hit) return 0;
+    if (hit === "hour") best = Math.min(best, msToHour);
+    else if (hit === "day") best = Math.min(best, msToMidnight);
+    // "month" never recovers soon -> ignore
+  }
+  if (!isFinite(best)) return -1;
+  return Math.max(1, Math.ceil(best / 1000));
 }
 
 // model alias -> provider id. "auto" (default) = full waterfall.
@@ -199,11 +252,14 @@ async function handleChat(body, res) {
   for (const p of chain) {
     // skip exhausted / cooling without burning a call
     if (coolingUntil(p.id)) { tried.push(`${p.id}:cooldown`); continue; }
-    const c = countOf(p.id);
-    if ((p.daily && c.day >= p.daily) || (p.monthly && c.month >= p.monthly)) {
-      tried.push(`${p.id}:budget`); continue;
-    }
+    const hit = budgetHit(p);
+    if (hit) { tried.push(`${p.id}:budget-${hit}`); continue; }
     if (!p.key) { tried.push(`${p.id}:nokey`); continue; }
+
+    // pacing: wait out the min gap instead of bursting into a 429
+    const wait = paceWaitMs(p);
+    if (wait > 0) await sleep(wait);
+    stampCall(p);
 
     let r;
     try {
@@ -274,6 +330,14 @@ async function handleChat(body, res) {
     lastErr = { status: r.status, msg: `[${p.id}] ${text.slice(0, 300)}` };
   }
 
+  if (tried.length > 0 && tried.every((t) => /:(cooldown|budget-|nokey)/.test(t))) {
+    // parked: everything is throttled or budgeted out, nothing actually failed.
+    // Tell the client when to retry instead of a generic 502.
+    const retryAfterSec = nextRecoverySec(chain);
+    res.writeHead(429, { "content-type": "application/json", "retry-after": String(Math.max(1, retryAfterSec)) });
+    res.end(JSON.stringify({ error: { message: "all providers parked (budgets/cooldowns)", type: "all_parked", retryAfterSec }, _fallbacks: tried }));
+    return;
+  }
   res.writeHead(502, { "content-type": "application/json" });
   res.end(JSON.stringify({ error: { message: `all providers failed: ${lastErr.msg}`, type: "all_failed" }, _fallbacks: tried }));
 }
@@ -316,16 +380,24 @@ async function handler(req, res) {
   if (req.method === "GET" && url.pathname === "/usage") {
     const l = readLedger();
     send(res, 200, {
-      day: l.day, month: l.month,
+      day: l.day, month: l.month, hour: l.hour,
       providers: ordered.map((p) => {
-        const c = l.counts[p.id] || { day: 0, month: 0, tokens: 0 };
+        const c = l.counts[p.id] || { day: 0, month: 0, hour: 0, tokens: 0 };
         return {
           id: p.id, label: p.label, model: p.model, rank: p.rank,
+          usedHour: c.hour || 0, hourly: p.hourly || null,
           usedDay: c.day, daily: p.daily, usedMonth: c.month, monthly: p.monthly,
           tokens: c.tokens, coolingUntil: coolingUntil(p.id) || 0,
         };
       }),
     });
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ready") {
+    // Cheap park-check for forever-loops: ok=false means sleep retryAfterSec.
+    const okList = eligible().map((p) => p.id);
+    const retryAfterSec = okList.length ? 0 : nextRecoverySec();
+    send(res, 200, { ok: okList.length > 0, eligible: okList, retryAfterSec });
     return;
   }
   if (req.method === "POST" && url.pathname === "/v1/chat/completions") {

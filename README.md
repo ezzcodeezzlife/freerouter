@@ -37,22 +37,28 @@ curl -s http://localhost:4001/v1/chat/completions ^
 - `"model": "mistral"|"glm"|"ling"|"agnes"|"hf"|"cloudflare"|"cohere"` = pin that
   provider first, still fails over to the rest.
 - `GET /v1/models` — what tools auto-discover.
-- `GET /usage` — live budget dashboard (requests today/month, cooldowns).
+- `GET /usage` — live budget dashboard (requests hour/day/month, cooldowns).
+- `GET /ready` — park-check for loops: `{ok, eligible[], retryAfterSec}`.
+  Poll this before work; if `ok` is false, sleep `retryAfterSec` and retry.
 - `GET /health` — liveness.
+- Exhausted router answers chat with `429 + retry-after` (all parked) instead
+  of 502, so clients back off instead of failing.
 
 ## Budgets (edit in providers.json)
 
-| provider | daily | monthly |
-|---|---|---|
-| zai | 1000 | 30000 |
-| mistral | 5000 | 150000 |
-| openrouter | 50 | 1500 |
-| agnes | 40000 | 300000 |
-| hf | 50 | 600 |
-| cloudflare | 1500 | 45000 |
-| cohere | 33 | 1000 |
+| provider | hourly | daily | monthly | min gap |
+|---|---|---|---|---|
+| zai | 40 | 1000 | 30000 | 3s |
+| mistral | 600 | 5000 | 150000 | 2s |
+| openrouter | 2 | 50 | 1500 | 2s |
+| agnes | 1500 | 40000 | 300000 | 0.5s |
+| hf | 4 | 50 | 600 | 2s |
+| cloudflare | 200 | 1500 | 45000 | 1s |
+| cohere | 2 | 33 | 1000 | 2s |
 
-Counters live in `usage.json` (day resets UTC midnight, month on the 1st).
+Counters live in `usage.json` (hour resets on the UTC hour, day at UTC
+midnight, month on the 1st). `hourly` spreads tiny budgets across the day;
+`minIntervalMs` paces bursts so agent traffic doesn't self-inflict 429s.
 
 ## Vercel (free Hobby)
 

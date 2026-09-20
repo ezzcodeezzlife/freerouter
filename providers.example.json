@@ -13,7 +13,9 @@
       "env": "ZAI_KEY",
       "daily": 1000,
       "monthly": 30000,
-      "rank": 1
+      "rank": 1,
+      "hourly": 40,
+      "minIntervalMs": 3000
     },
     {
       "id": "mistral",
@@ -24,7 +26,9 @@
       "env": "MISTRAL_KEY",
       "daily": 5000,
       "monthly": 150000,
-      "rank": 2
+      "rank": 2,
+      "hourly": 600,
+      "minIntervalMs": 2000
     },
     {
       "id": "openrouter",
@@ -35,7 +39,9 @@
       "env": "OPENROUTER_KEY",
       "daily": 50,
       "monthly": 1500,
-      "rank": 3
+      "rank": 3,
+      "hourly": 2,
+      "minIntervalMs": 2000
     },
     {
       "id": "agnes",
@@ -46,7 +52,9 @@
       "env": "AGNES_KEY",
       "daily": 40000,
       "monthly": 300000,
-      "rank": 4
+      "rank": 4,
+      "hourly": 1500,
+      "minIntervalMs": 500
     },
     {
       "id": "hf",
@@ -57,7 +65,9 @@
       "env": "HF_KEY",
       "daily": 50,
       "monthly": 600,
-      "rank": 5
+      "rank": 5,
+      "hourly": 4,
+      "minIntervalMs": 2000
     },
     {
       "id": "cloudflare",
@@ -68,7 +78,9 @@
       "env": "CLOUDFLARE_KEY",
       "daily": 1500,
       "monthly": 45000,
-      "rank": 6
+      "rank": 6,
+      "hourly": 200,
+      "minIntervalMs": 1000
     },
     {
       "id": "cohere",
@@ -79,7 +91,9 @@
       "env": "COHERE_KEY",
       "daily": 33,
       "monthly": 1000,
-      "rank": 7
+      "rank": 7,
+      "hourly": 2,
+      "minIntervalMs": 2000
     }
   ]
 }
