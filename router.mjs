@@ -20,12 +20,12 @@ const EMBEDDED = {
   routerKey: "sk-local", port: 4001, timeoutMs: 60000, cooldownSec: 60,
   providers: [
     { id: "zai", label: "Z.AI GLM-4.5-Flash", base: "https://api.z.ai/api/paas/v4", model: "glm-4.5-flash", key: "", env: "ZAI_KEY", hourly: 40, daily: 1000, monthly: 30000, minIntervalMs: 3000, rank: 1 },
-    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", hourly: 600, daily: 5000, monthly: 150000, minIntervalMs: 2000, rank: 2 },
+    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", hourly: 120, daily: 5000, monthly: 150000, minIntervalMs: 5000, failCooldownSec: 600, rank: 2 },
     { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", hourly: 2, daily: 50, monthly: 1500, minIntervalMs: 2000, rank: 3 },
     { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", hourly: 1500, daily: 40000, monthly: 300000, minIntervalMs: 500, rank: 4 },
     { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", hourly: 4, daily: 50, monthly: 600, minIntervalMs: 2000, rank: 5 },
-    { id: "cloudflare", label: "Cloudflare Llama 3.1 8B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", key: "", env: "CLOUDFLARE_KEY", hourly: 200, daily: 1500, monthly: 45000, minIntervalMs: 1000, rank: 6 },
-    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", hourly: 2, daily: 33, monthly: 1000, minIntervalMs: 2000, rank: 7 },
+    { id: "cloudflare", label: "Cloudflare Mistral Small 24B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/mistralai/mistral-small-3.1-24b-instruct", key: "", env: "CLOUDFLARE_KEY", hourly: 200, daily: 1500, monthly: 45000, minIntervalMs: 1000, rank: 6 },
+    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", hourly: 2, daily: 33, monthly: 1000, minIntervalMs: 2000, maxOutput: 4000, rank: 7 },
   ],
 };
 
@@ -194,14 +194,33 @@ function chainFor(model) {
 }
 
 // ---------- provider call ----------
+// Reasoning models (GLM) return reasoning_content/thinking blocks that
+// opencode echoes back into history. Non-reasoning providers (Cohere, …)
+// 400 on them, so strip those fields for everyone except the producer.
+const REASON_KEYS = ["reasoning_content", "reasoning", "thinking", "thinking_blocks", "reasoning_details"];
+function cleanMessages(p, messages) {
+  if (p.id === "zai" || p.keepReasoning) return messages;
+  return (messages || []).map((m) => {
+    if (!m || typeof m !== "object") return m;
+    let dirty = false;
+    for (const k of REASON_KEYS) if (k in m) { dirty = true; break; }
+    if (!dirty) return m;
+    const c = { ...m };
+    for (const k of REASON_KEYS) delete c[k];
+    return c;
+  });
+}
 async function callProvider(p, body) {
   const url = p.base.replace(/\/$/, "") + "/chat/completions";
+  // Some providers cap output length (Cohere R7B: 4096) while clients like
+  // opencode send 32000. Clamp instead of letting the provider 400 the call.
+  const clamp = (n) => (p.maxOutput && n !== undefined ? Math.min(n, p.maxOutput) : n);
   const payload = {
     model: p.model,
-    messages: body.messages,
+    messages: cleanMessages(p, body.messages),
     ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
-    ...(body.max_tokens !== undefined ? { max_tokens: body.max_tokens } : {}),
-    ...(body.max_completion_tokens !== undefined ? { max_tokens: body.max_completion_tokens } : {}),
+    ...(body.max_tokens !== undefined ? { max_tokens: clamp(body.max_tokens) } : {}),
+    ...(body.max_completion_tokens !== undefined ? { max_tokens: clamp(body.max_completion_tokens) } : {}),
     ...(body.top_p !== undefined ? { top_p: body.top_p } : {}),
     ...(body.stop !== undefined ? { stop: body.stop } : {}),
     ...(body.tools !== undefined ? { tools: body.tools } : {}),
@@ -318,15 +337,20 @@ async function handleChat(body, res) {
     const text = await r.text().catch(() => "");
     const kind = errKind(r.status);
     tried.push(`${p.id}:${r.status}`);
-    if (kind === "fatal-client" && r.status !== 404) {
-      // bad request / bad key shape: don't waste the other 6, surface it
-      if (r.status === 401 || r.status === 403) cooldown(p.id, 10 * 60 * 1000);
+    if (r.status === 401 || r.status === 403) {
+      // bad key: won't heal by retrying elsewhere on this provider, bench long
+      // and surface (client config problem, not a routing problem)
+      cooldown(p.id, 10 * 60 * 1000);
       res.writeHead(r.status, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: `[${p.id}] ${text.slice(0, 500)}`, type: "provider_error" }, _fallbacks: tried }));
       return;
     }
-    // 404 (model name rejected), 429, 5xx -> bench + fail over
-    cooldown(p.id, r.status === 429 ? 60 * 1000 : COOLDOWN);
+    // 400/404/422 (provider quirk, e.g. unsupported field), 429, 5xx ->
+    // short bench + fail over. Per-provider fail bench so a persistently
+    // throttled provider (Mistral free tier) costs one slow hop per N minutes
+    // instead of one per request, but rejoins automatically on recovery.
+    const bench = r.status === 429 ? (p.failCooldownSec || 60) * 1000 : COOLDOWN;
+    cooldown(p.id, bench);
     lastErr = { status: r.status, msg: `[${p.id}] ${text.slice(0, 300)}` };
   }
 
