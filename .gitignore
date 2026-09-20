@@ -8,3 +8,4 @@ providers.json
 usage.json
 
 .vercel
+.server.pid
