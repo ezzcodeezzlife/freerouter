@@ -20,12 +20,18 @@ const EMBEDDED = {
   routerKey: "sk-local", port: 4001, timeoutMs: 60000, cooldownSec: 60,
   providers: [
     { id: "zai", label: "Z.AI GLM-4.5-Flash", base: "https://api.z.ai/api/paas/v4", model: "glm-4.5-flash", key: "", env: "ZAI_KEY", hourly: 40, daily: 1000, monthly: 30000, minIntervalMs: 3000, rank: 1 },
-    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", hourly: 120, daily: 5000, monthly: 150000, minIntervalMs: 5000, failCooldownSec: 600, rank: 2 },
-    { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", hourly: 2, daily: 50, monthly: 1500, minIntervalMs: 2000, rank: 3 },
-    { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", hourly: 1500, daily: 40000, monthly: 300000, minIntervalMs: 500, rank: 4 },
-    { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", hourly: 4, daily: 50, monthly: 600, minIntervalMs: 2000, rank: 5 },
-    { id: "cloudflare", label: "Cloudflare Mistral Small 24B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/mistralai/mistral-small-3.1-24b-instruct", key: "", env: "CLOUDFLARE_KEY", hourly: 200, daily: 1500, monthly: 45000, minIntervalMs: 1000, rank: 6 },
-    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", hourly: 2, daily: 33, monthly: 1000, minIntervalMs: 2000, maxOutput: 4000, rank: 7 },
+    { id: "groq", label: "Groq Llama 3.3 70B", base: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", key: "", env: "GROQ_KEY", hourly: 1500, daily: 14000, monthly: 400000, minIntervalMs: 2500, rank: 2 },
+    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", hourly: 120, daily: 5000, monthly: 150000, minIntervalMs: 5000, failCooldownSec: 600, rank: 3 },
+    { id: "gemini", label: "Google Gemini 2.0 Flash", base: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "gemini-2.0-flash", key: "", env: "GEMINI_KEY", hourly: 200, daily: 1500, monthly: 40000, minIntervalMs: 5000, rank: 4 },
+    { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", hourly: 2, daily: 50, monthly: 1500, minIntervalMs: 2000, rank: 5 },
+    { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", hourly: 1500, daily: 40000, monthly: 300000, minIntervalMs: 500, rank: 6 },
+    { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", hourly: 4, daily: 50, monthly: 600, minIntervalMs: 2000, rank: 7 },
+    { id: "cloudflare", label: "Cloudflare Mistral Small 24B", base: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "@cf/mistralai/mistral-small-3.1-24b-instruct", key: "", env: "CLOUDFLARE_KEY", hourly: 200, daily: 1500, monthly: 45000, minIntervalMs: 1000, rank: 8 },
+    { id: "cerebras", label: "Cerebras Llama 3.3 70B", base: "https://api.cerebras.ai/v1", model: "llama-3.3-70b", key: "", env: "CEREBRAS_KEY", hourly: 100, daily: 1000, monthly: 25000, minIntervalMs: 3000, rank: 9 },
+    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", hourly: 2, daily: 33, monthly: 1000, minIntervalMs: 2000, maxOutput: 4000, rank: 10 },
+    // Keyless last resort: works with zero configuration. Please be gentle
+    // (generous pacing) so this shared free service stays usable for everyone.
+    { id: "pollinations", label: "Pollinations (keyless)", base: "https://text.pollinations.ai/openai", model: "openai", key: "", noKey: true, noAuth: true, hourly: 200, daily: 2000, monthly: 50000, minIntervalMs: 15000, rank: 11 },
   ],
 };
 
@@ -127,9 +133,23 @@ function eligible(list = ordered) {
   return list.filter((p) => {
     if (coolingUntil(p.id)) return false;
     if (budgetHit(p)) return false;
-    if (!p.key) return false;
+    if (!usable(p)) return false;
     return true;
   });
+}
+
+// A provider is usable when it has credentials (or needs none, e.g. keyless
+// Pollinations) AND its base URL has no unfilled placeholder (e.g. the
+// Cloudflare template still says YOUR_ACCOUNT_ID).
+function usable(p) {
+  if (!p.noKey && !p.key) return false;
+  if (/YOUR_|EXAMPLE|PLACEHOLDER/i.test(p.base || "")) return false;
+  return true;
+}
+function unusableReason(p) {
+  if (!p.noKey && !p.key) return "nokey";
+  if (/YOUR_|EXAMPLE|PLACEHOLDER/i.test(p.base || "")) return "unconfigured";
+  return null;
 }
 
 // Pacing: min gap between calls per provider (wait, don't skip) so agent
@@ -158,7 +178,7 @@ function nextRecoverySec(list = ordered) {
   const msToMidnight = 86400000 - (d.getUTCHours() * 3600000 + d.getUTCMinutes() * 60000 + d.getUTCSeconds() * 1000 + d.getUTCMilliseconds());
   let best = Infinity;
   for (const p of list) {
-    if (!p.key) continue;
+    if (!usable(p)) continue;
     const cool = coolingUntil(p.id);
     if (cool) { best = Math.min(best, cool - now); continue; }
     const hit = budgetHit(p);
@@ -175,12 +195,16 @@ function nextRecoverySec(list = ordered) {
 const ALIAS = {
   auto: null, smart: null, best: null,
   glm: "zai", "glm-4.5-flash": "zai", zai: "zai",
+  groq: "groq", llama: "groq", "llama-3.3-70b-versatile": "groq",
+  gemini: "gemini", "gemini-2.0-flash": "gemini", google: "gemini",
   mistral: "mistral", "mistral-small-latest": "mistral",
   ling: "openrouter", openrouter: "openrouter",
   agnes: "agnes", "agnes-2.0-flash": "agnes",
-  hf: "hf", llama: "hf",
+  hf: "hf", huggingface: "hf",
   cloudflare: "cloudflare", cf: "cloudflare", "cf-llama": "cloudflare",
+  cerebras: "cerebras",
   cohere: "cohere", r7b: "cohere", "command-r7b-12-2024": "cohere",
+  pollinations: "pollinations", pollen: "pollinations",
 };
 function chainFor(model) {
   const key = String(model || "auto").toLowerCase();
@@ -228,10 +252,10 @@ async function callProvider(p, body) {
     ...(body.response_format !== undefined ? { response_format: body.response_format } : {}),
     ...(body.stream ? { stream: true } : {}),
   };
-  const headers = {
-    "content-type": "application/json",
-    authorization: `Bearer ${p.key}`,
-  };
+  const headers = { "content-type": "application/json" };
+  // Keyless providers (Pollinations) need no Authorization header; sending
+  // an empty Bearer token can break them, so skip it when p.noAuth is set.
+  if (!p.noAuth) headers.authorization = `Bearer ${p.key}`;
   if (p.id === "openrouter") {
     headers["HTTP-Referer"] = "http://localhost:4001/";
     headers["X-Title"] = "freerouter";
@@ -273,7 +297,8 @@ async function handleChat(body, res) {
     if (coolingUntil(p.id)) { tried.push(`${p.id}:cooldown`); continue; }
     const hit = budgetHit(p);
     if (hit) { tried.push(`${p.id}:budget-${hit}`); continue; }
-    if (!p.key) { tried.push(`${p.id}:nokey`); continue; }
+    const whyNot = unusableReason(p);
+    if (whyNot) { tried.push(`${p.id}:${whyNot}`); continue; }
 
     // pacing: wait out the min gap instead of bursting into a 429
     const wait = paceWaitMs(p);
@@ -354,7 +379,7 @@ async function handleChat(body, res) {
     lastErr = { status: r.status, msg: `[${p.id}] ${text.slice(0, 300)}` };
   }
 
-  if (tried.length > 0 && tried.every((t) => /:(cooldown|budget-|nokey)/.test(t))) {
+  if (tried.length > 0 && tried.every((t) => /:(cooldown|budget-|nokey|unconfigured)/.test(t))) {
     // parked: everything is throttled or budgeted out, nothing actually failed.
     // Tell the client when to retry instead of a generic 502.
     const retryAfterSec = nextRecoverySec(chain);

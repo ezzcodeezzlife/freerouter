@@ -1,9 +1,16 @@
 {
   "name": "freerouter",
-  "version": "1.0.0",
-  "description": "Standalone free-model quality-waterfall router (OpenAI-compatible)",
+  "version": "1.1.0",
+  "description": "One OpenAI-compatible endpoint for all your free LLM keys: quality-waterfall routing with automatic failover",
   "type": "module",
   "main": "router.mjs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ezzcodeezzlife/freerouter.git"
+  },
+  "homepage": "https://github.com/ezzcodeezzlife/freerouter",
+  "keywords": ["llm", "free", "openai-compatible", "router", "failover", "groq", "gemini", "mistral"],
   "scripts": {
     "start": "node router.mjs"
   },
