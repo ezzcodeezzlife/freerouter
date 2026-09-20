@@ -1,0 +1,13 @@
+{
+  "name": "freerouter",
+  "version": "1.0.0",
+  "description": "Standalone free-model quality-waterfall router (OpenAI-compatible)",
+  "type": "module",
+  "main": "router.mjs",
+  "scripts": {
+    "start": "node router.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

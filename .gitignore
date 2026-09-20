@@ -1,0 +1,8 @@
+node_modules/
+.env
+router.log
+server-out.log
+server-err.log
+# local secrets + state (never commit keys)
+providers.json
+usage.json
