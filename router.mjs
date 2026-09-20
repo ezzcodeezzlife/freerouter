@@ -13,13 +13,29 @@ const __dir = path.dirname(fileURLToPath(import.meta.url));
 const PROVIDERS_PATH = path.join(__dir, "providers.json");
 const USAGE_PATH = path.join(__dir, "usage.json");
 
+// Embedded catalog (no keys): last-resort fallback when neither providers.json
+// nor providers.example.json is bundled (e.g. Vercel serverless). Keys come
+// from env vars (see each entry's "env").
+const EMBEDDED = {
+  routerKey: "sk-local", port: 4001, timeoutMs: 60000, cooldownSec: 60,
+  providers: [
+    { id: "zai", label: "Z.AI GLM-4.5-Flash", base: "https://api.z.ai/api/paas/v4", model: "glm-4.5-flash", key: "", env: "ZAI_KEY", daily: 1000, monthly: 30000, rank: 1 },
+    { id: "mistral", label: "Mistral Small 3.2 24B", base: "https://api.mistral.ai/v1", model: "mistral-small-latest", key: "", env: "MISTRAL_KEY", daily: 5000, monthly: 150000, rank: 2 },
+    { id: "openrouter", label: "OpenRouter Ling 3.0 Flash VL :free", base: "https://openrouter.ai/api/v1", model: "inclusionai/ling-3.0-flash-vl:free", key: "", env: "OPENROUTER_KEY", daily: 50, monthly: 1500, rank: 3 },
+    { id: "agnes", label: "Agnes 2.0 Flash", base: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", key: "", env: "AGNES_KEY", daily: 40000, monthly: 300000, rank: 4 },
+    { id: "hf", label: "HF Llama 3.1 8B", base: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", key: "", env: "HF_KEY", daily: 50, monthly: 600, rank: 5 },
+    { id: "cloudflare", label: "Cloudflare Llama 3.1 8B", base: "https://api.cloudflare.com/client/v4/accounts/9832ec7f475d8a1a98cfab82554e4aea/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", key: "", env: "CLOUDFLARE_KEY", daily: 1500, monthly: 45000, rank: 6 },
+    { id: "cohere", label: "Cohere Command R7B", base: "https://api.cohere.com/compatibility/v1", model: "command-r7b-12-2024", key: "", env: "COHERE_KEY", daily: 33, monthly: 1000, rank: 7 },
+  ],
+};
+
 function loadConfig() {
   // Fresh clones only have providers.example.json (providers.json holds local keys, gitignored).
-  const cfgPath = fs.existsSync(PROVIDERS_PATH)
-    ? PROVIDERS_PATH
-    : path.join(__dir, "providers.example.json");
-  const raw = fs.readFileSync(cfgPath, "utf8");
-  const cfg = JSON.parse(raw);
+  let cfg = null;
+  for (const p of [PROVIDERS_PATH, path.join(__dir, "providers.example.json")]) {
+    try { cfg = JSON.parse(fs.readFileSync(p, "utf8")); break; } catch { /* next */ }
+  }
+  if (!cfg) cfg = JSON.parse(JSON.stringify(EMBEDDED));
   // Env overrides (so Vercel uses env vars, no keys in repo).
   for (const p of cfg.providers) {
     if (p.env && process.env[p.env]) p.key = process.env[p.env];

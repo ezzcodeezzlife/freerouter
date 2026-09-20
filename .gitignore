@@ -6,3 +6,5 @@ server-err.log
 # local secrets + state (never commit keys)
 providers.json
 usage.json
+
+.vercel
